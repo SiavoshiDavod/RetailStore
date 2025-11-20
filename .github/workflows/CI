@@ -1,0 +1,63 @@
+on:
+push:
+branches: [ main, dev ]
+pull_request:
+branches: [ main, dev ]
+
+jobs:
+build-and-test:
+runs-on: ubuntu-latest
+services:
+sqlserver:
+image: mcr.microsoft.com/mssql/server:2022-latest
+options: >-
+--cap-add SYS_PTRACE
+env:
+SA_PASSWORD: "YourStrong!Passw0rd"
+ACCEPT_EULA: "Y"
+steps:
+
+uses: actions/checkout@v4
+name: Setup .NET
+uses: actions/setup-dotnet@v2
+with:
+dotnet-version: '9.0.x'
+
+name: Restore NuGet packages
+run: dotnet restore
+
+name: Build
+run: dotnet build --no-restore
+
+name: Run EF migrations (optional)
+run: dotnet ef database update -p src/server/RetailStore.Infrastructure -s src/server/RetailStore.Api
+
+name: Run tests (if exist)
+run: dotnet test
+
+name: Setup Node
+uses: actions/setup-node@v4
+with:
+node-version: '20'
+
+name: Install frontend dependencies
+run: |
+cd src/client
+npm install
+
+name: Build frontend
+run: |
+cd src/client
+npm run build
+
+name: Build API for production (optional)
+run: |
+dotnet publish -c Release -o ./publish
+
+name: Upload artifacts
+uses: actions/upload-artifact@v3
+with:
+name: RetailStore-artifacts
+path: |
+src/client/dist
+src/server/RetailStore.Api/publish
