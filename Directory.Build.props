@@ -1,0 +1,43 @@
+<Project>
+  <PropertyGroup>
+    <!-- تمام پروژه‌های زیرمجموعه این تنظیمات رو به ارث می‌برن -->
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>12</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    
+    <!-- کداستایل مشترک -->
+    <AnalysisLevel>latest</AnalysisLevel>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    
+    <!-- نام‌گذاری و نسخه‌گذاری -->
+    <Authors>Marketplace Team</Authors>
+    <Company>Marketplace Co.</Company>
+    <Copyright>© 2025 Marketplace. All rights reserved.</Copyright>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- تنظیمات مشترک برای تمام پروژه‌های API -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' EndsWith('Api')">
+    <OpenApiGenerateDocumentsOnBuild>true</OpenApiGenerateDocumentsOnBuild>
+    <OpenApiDocumentsDirectory>$(MSBuildProjectDir)</OpenApiDocumentsDirectory>
+  </PropertyGroup>
+
+  <!-- تنظیمات مشترک برای تمام پروژه‌های تست -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' EndsWith('.Tests')">
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- پکیج‌های مشترک برای همه پروژه‌ها -->
+  <ItemGroup>
+    <Using Include="System" />
+    <Using Include="System.Collections.Generic" />
+    <Using Include="System.Linq" />
+    <Using Include="System.Threading.Tasks" />
+    <Using Include="FluentResults" />
+  </ItemGroup>
+</Project>
