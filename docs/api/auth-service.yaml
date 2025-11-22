@@ -1,0 +1,394 @@
+openapi: 3.0.3
+info:
+  title: Auth Service API
+  version: 1.0.0
+  description: >
+    سرویس احراز هویت و مجوزدهی پلتفرم خرده‌فروشی. مدیریت کاربران، نقش‌ها، منوها
+    و صدور JWT برای سرویس‌های داخلی و خارجی. پشتیبانی از نقش‌های SystemAdmin،
+    Supplier، OrderSupport، Customer و سایر نقش‌های مشتق‌شده.
+servers:
+  - url: https://api.marketplace.local/auth
+    description: Production
+  - url: https://api.marketplace.sbx/auth
+    description: Sandbox
+tags:
+  - name: Authentication
+  - name: Users
+  - name: Roles
+  - name: Operations
+paths:
+  /api/auth/login:
+    post:
+      tags: [Authentication]
+      summary: ورود کاربر و دریافت توکن
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: موفقیت
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: اعتبارسنجی ناموفق
+  /api/auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: نوسازی توکن دسترسی
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: موفقیت
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: توکن نامعتبر یا منقضی
+  /api/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: باطل‌کردن refresh token جاری
+      responses:
+        '204':
+          description: موفق
+  /api/users:
+    get:
+      tags: [Users]
+      summary: فهرست کاربران با فیلتر
+      parameters:
+        - in: query
+          name: userType
+          schema:
+            $ref: '#/components/schemas/UserType'
+        - in: query
+          name: status
+          schema:
+            enum: [Active, Suspended, Pending]
+        - in: query
+          name: page
+          schema:
+            type: integer
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: لیست کاربران
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUserResponse'
+    post:
+      tags: [Users]
+      summary: ایجاد کاربر جدید
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '409':
+          description: تکراری بودن ایمیل یا موبایل
+  /api/users/{userId}:
+    get:
+      tags: [Users]
+      summary: مشاهده جزئیات کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDto'
+        '404':
+          description: یافت نشد
+    put:
+      tags: [Users]
+      summary: به‌روزرسانی کامل کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: موفق
+    patch:
+      tags: [Users]
+      summary: تغییر وضعیت کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                status:
+                  enum: [Active, Suspended]
+      responses:
+        '200':
+          description: موفق
+  /api/users/{userId}/roles:
+    get:
+      tags: [Users]
+      summary: دریافت نقش‌های کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: لیست نقش‌ها
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleDto'
+    put:
+      tags: [Users]
+      summary: جایگزینی نقش‌های کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+              example: ["Supplier", "OrderSupport"]
+      responses:
+        '204':
+          description: موفق
+  /api/roles:
+    get:
+      tags: [Roles]
+      summary: لیست نقش‌ها و عملیات منتسب
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RoleDto'
+    post:
+      tags: [Roles]
+      summary: ایجاد نقش سفارشی
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleRequest'
+      responses:
+        '201':
+          description: ایجاد شد
+  /api/roles/{roleId}:
+    delete:
+      tags: [Roles]
+      summary: حذف نقش
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: حذف شد
+  /api/operations:
+    get:
+      tags: [Operations]
+      summary: لیست Operation ها برای نگاشت منو
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OperationDto'
+components:
+  parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        format: uuid
+        type: string
+  schemas:
+    UserType:
+      type: string
+      enum:
+        - SystemAdmin
+        - Supplier
+        - Vendor
+        - OrderSupport
+        - Customer
+        - DeliveryAgent
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        deviceId:
+          type: string
+        otp:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        expiresIn:
+          type: integer
+        user:
+          $ref: '#/components/schemas/UserDto'
+        permissions:
+          type: array
+          items:
+            type: string
+    UserDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        userType:
+          $ref: '#/components/schemas/UserType'
+        status:
+          enum: [Active, Suspended, Pending]
+        roles:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    PagedUserResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserDto'
+    CreateUserRequest:
+      type: object
+      required: [fullName, email, mobile, password, userType]
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        mobile:
+          type: string
+        password:
+          type: string
+          format: password
+        userType:
+          $ref: '#/components/schemas/UserType'
+        roles:
+          type: array
+          items:
+            type: string
+    UpdateUserRequest:
+      type: object
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+        mobile:
+          type: string
+        userType:
+          $ref: '#/components/schemas/UserType'
+    RoleDto:
+      type: object
+      properties:
+        roleId:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        operations:
+          type: array
+          items:
+            type: string
+    CreateRoleRequest:
+      type: object
+      required: [name, operations]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        operations:
+          type: array
+          items:
+            type: string
+    OperationDto:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+        menuPath:
+          type: string
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

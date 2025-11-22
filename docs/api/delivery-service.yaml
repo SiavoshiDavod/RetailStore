@@ -1,0 +1,429 @@
+openapi: 3.0.3
+info:
+  title: Delivery Service API
+  version: 1.0.0
+  description: >
+    سرویس تحویل و حمل برای مدیریت مأموریت‌های بایکر، انتساب سفارش به سرویس‌دهندگان
+    حمل (Snapp Box، Miare، Alopeyk، Tapsi Courier) و ردیابی لحظه‌ای وضعیت تحویل.
+servers:
+  - url: https://api.marketplace.local/delivery
+    description: Production
+  - url: https://api.marketplace.sbx/delivery
+    description: Sandbox
+tags:
+  - name: Deliveries
+  - name: Couriers
+  - name: Providers
+paths:
+  /api/deliveries/quote:
+    post:
+      tags: [Deliveries]
+      summary: دریافت نرخ و زمان تخمینی برای مسیر
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QuoteRequest'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuoteResponse'
+        '400':
+          description: داده نامعتبر
+  /api/deliveries:
+    post:
+      tags: [Deliveries]
+      summary: ایجاد مأموریت تحویل برای سفارش
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDeliveryRequest'
+      responses:
+        '201':
+          description: ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDto'
+    get:
+      tags: [Deliveries]
+      summary: جستجوی مأموریت‌ها
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/DeliveryStatus'
+        - in: query
+          name: provider
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedDeliveryResponse'
+  /api/deliveries/{deliveryId}:
+    get:
+      tags: [Deliveries]
+      summary: مشاهده جزئیات مأموریت
+      parameters:
+        - $ref: '#/components/parameters/DeliveryId'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeliveryDto'
+        '404':
+          description: یافت نشد
+    patch:
+      tags: [Deliveries]
+      summary: به‌روزرسانی وضعیت تحویل (برای سیستم‌های داخلی)
+      parameters:
+        - $ref: '#/components/parameters/DeliveryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              properties:
+                status:
+                  $ref: '#/components/schemas/DeliveryStatus'
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: موفق
+  /api/deliveries/{deliveryId}/events:
+    post:
+      tags: [Deliveries]
+      summary: ثبت رویداد پیشرفت (Webhook از سرویس‌دهنده حمل)
+      parameters:
+        - $ref: '#/components/parameters/DeliveryId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryEventRequest'
+      responses:
+        '202':
+          description: پذیرفته شد
+  /api/couriers:
+    get:
+      tags: [Couriers]
+      summary: لیست بایکرهای داخلی
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CourierDto'
+    post:
+      tags: [Couriers]
+      summary: ثبت بایکر داخلی
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCourierRequest'
+      responses:
+        '201':
+          description: ایجاد شد
+  /api/couriers/{courierId}/assignments:
+    get:
+      tags: [Couriers]
+      summary: دریافت مأموریت‌های فعال بایکر
+      parameters:
+        - name: courierId
+          in: path
+          required: true
+          schema:
+            format: uuid
+            type: string
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeliveryDto'
+  /api/providers:
+    get:
+      tags: [Providers]
+      summary: لیست سرویس‌دهندگان حمل و وضعیت اتصال
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProviderDto'
+components:
+  parameters:
+    DeliveryId:
+      name: deliveryId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    DeliveryStatus:
+      type: string
+      enum:
+        - Pending
+        - Assigned
+        - PickedUp
+        - InTransit
+        - Delivered
+        - Failed
+        - Cancelled
+    QuoteRequest:
+      type: object
+      required: [pickupLocation, dropoffLocation, weightKg, orderId]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        pickupLocation:
+          $ref: '#/components/schemas/Location'
+        dropoffLocation:
+          $ref: '#/components/schemas/Location'
+        weightKg:
+          type: number
+          format: float
+        deliveryWindow:
+          type: object
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+    QuoteResponse:
+      type: object
+      properties:
+        providerQuotes:
+          type: array
+          items:
+            type: object
+            properties:
+              providerCode:
+                type: string
+              estimatedCost:
+                type: number
+              currency:
+                type: string
+              etaMinutes:
+                type: integer
+              reliabilityScore:
+                type: number
+    CreateDeliveryRequest:
+      type: object
+      required:
+        [orderId, providerCode, pickupLocation, dropoffLocation, contactInfo]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        providerCode:
+          type: string
+          description: SnappBox, Miare, Alopeyk, TapsiCourier یا Internal
+        preferredCourierId:
+          type: string
+          format: uuid
+        notes:
+          type: string
+        pickupLocation:
+          $ref: '#/components/schemas/Location'
+        dropoffLocation:
+          $ref: '#/components/schemas/Location'
+        contactInfo:
+          $ref: '#/components/schemas/ContactInfo'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ParcelItem'
+    DeliveryDto:
+      type: object
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+          format: uuid
+        providerCode:
+          type: string
+        trackingCode:
+          type: string
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+        pickupLocation:
+          $ref: '#/components/schemas/Location'
+        dropoffLocation:
+          $ref: '#/components/schemas/Location'
+        assignedCourier:
+          $ref: '#/components/schemas/CourierDto'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryEvent'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PagedDeliveryResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeliveryDto'
+    DeliveryEventRequest:
+      type: object
+      required: [eventCode, occurredAt]
+      properties:
+        eventCode:
+          type: string
+          enum:
+            [PickedUp, ArrivedPickup, DepartedPickup, ArrivedDropoff, Delivered, Failed]
+        occurredAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+    DeliveryEvent:
+      type: object
+      properties:
+        eventCode:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        notes:
+          type: string
+        location:
+          $ref: '#/components/schemas/GeoPoint'
+    CourierDto:
+      type: object
+      properties:
+        courierId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        phoneNumber:
+          type: string
+        vehicleType:
+          type: string
+          enum: [Bike, Motorbike, Car, Van]
+        status:
+          enum: [Available, OnDelivery, Inactive]
+    CreateCourierRequest:
+      type: object
+      required: [fullName, phoneNumber, vehicleType]
+      properties:
+        fullName:
+          type: string
+        phoneNumber:
+          type: string
+        vehicleType:
+          type: string
+          enum: [Bike, Motorbike, Car, Van]
+    ProviderDto:
+      type: object
+      properties:
+        providerCode:
+          type: string
+        name:
+          type: string
+        status:
+          enum: [Active, Disabled, Degraded]
+        lastSyncAt:
+          type: string
+          format: date-time
+    Location:
+      type: object
+      required: [addressLine, city, geoPoint]
+      properties:
+        addressLine:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        geoPoint:
+          $ref: '#/components/schemas/GeoPoint'
+    GeoPoint:
+      type: object
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+    ContactInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        instructions:
+          type: string
+    ParcelItem:
+      type: object
+      properties:
+        sku:
+          type: string
+        description:
+          type: string
+        quantity:
+          type: integer
+        weightKg:
+          type: number
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

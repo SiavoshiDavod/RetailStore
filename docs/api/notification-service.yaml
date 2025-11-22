@@ -1,0 +1,400 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API
+  version: 1.0.0
+  description: >
+    سرویس اعلان برای ارسال پیام‌های چندکاناله (Email, SMS, Push, In-App) و مدیریت
+    ترجیحات کاربران. این سرویس از صف‌بندی رویدادها و تحویل قابل ردیابی پشتیبانی می‌کند.
+servers:
+  - url: https://api.marketplace.local/notification
+    description: Production
+  - url: https://api.marketplace.sbx/notification
+    description: Sandbox
+tags:
+  - name: Notifications
+  - name: Templates
+  - name: Preferences
+  - name: Channels
+paths:
+  /api/templates:
+    get:
+      tags: [Templates]
+      summary: لیست قالب‌ها با فیلتر کانال
+      parameters:
+        - in: query
+          name: channel
+          schema:
+            $ref: '#/components/schemas/ChannelType'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TemplateDto'
+    post:
+      tags: [Templates]
+      summary: ایجاد قالب اعلان
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTemplateRequest'
+      responses:
+        '201':
+          description: ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDto'
+  /api/templates/{templateId}:
+    get:
+      tags: [Templates]
+      summary: مشاهده جزئیات قالب
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplateDto'
+        '404':
+          description: یافت نشد
+    put:
+      tags: [Templates]
+      summary: به‌روزرسانی کامل قالب
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTemplateRequest'
+      responses:
+        '200':
+          description: موفق
+    delete:
+      tags: [Templates]
+      summary: حذف قالب
+      parameters:
+        - $ref: '#/components/parameters/TemplateId'
+      responses:
+        '204':
+          description: حذف شد
+  /api/notifications:
+    post:
+      tags: [Notifications]
+      summary: ارسال اعلان بر اساس قالب یا پیام سفارشی
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendNotificationRequest'
+      responses:
+        '202':
+          description: پذیرفته شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationAck'
+    get:
+      tags: [Notifications]
+      summary: جستجوی اعلان‌های ارسال شده
+      parameters:
+        - in: query
+          name: status
+          schema:
+            $ref: '#/components/schemas/NotificationStatus'
+        - in: query
+          name: channel
+          schema:
+            $ref: '#/components/schemas/ChannelType'
+        - in: query
+          name: recipient
+          schema:
+            type: string
+        - in: query
+          name: from
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: to
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedNotificationResponse'
+  /api/notifications/{notificationId}:
+    get:
+      tags: [Notifications]
+      summary: وضعیت اعلان
+      parameters:
+        - $ref: '#/components/parameters/NotificationId'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationDto'
+        '404':
+          description: یافت نشد
+  /api/preferences/{userId}:
+    get:
+      tags: [Preferences]
+      summary: دریافت ترجیحات اعلان کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPreferenceDto'
+    put:
+      tags: [Preferences]
+      summary: به‌روزرسانی ترجیحات اعلان کاربر
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePreferenceRequest'
+      responses:
+        '200':
+          description: موفق
+  /api/channels/status:
+    get:
+      tags: [Channels]
+      summary: وضعیت کانال‌های ارسال (Email Gateway، SMS Provider، Push Hub)
+      responses:
+        '200':
+          description: موفق
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChannelStatusDto'
+components:
+  parameters:
+    TemplateId:
+      name: templateId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    NotificationId:
+      name: notificationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    ChannelType:
+      type: string
+      enum: [Email, SMS, Push, InApp]
+    NotificationStatus:
+      type: string
+      enum: [Queued, Sending, Delivered, Failed, Cancelled]
+    TemplateDto:
+      type: object
+      properties:
+        templateId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        subject:
+          type: string
+        body:
+          type: string
+        placeholders:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+    CreateTemplateRequest:
+      type: object
+      required: [name, channel, body]
+      properties:
+        name:
+          type: string
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        subject:
+          type: string
+        body:
+          type: string
+        placeholders:
+          type: array
+          items:
+            type: string
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        placeholders:
+          type: array
+          items:
+            type: string
+    SendNotificationRequest:
+      type: object
+      required: [channel, recipient, payload]
+      properties:
+        templateId:
+          type: string
+          format: uuid
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        recipient:
+          type: string
+          description: ایمیل، شماره موبایل یا device token
+        locale:
+          type: string
+          example: fa-IR
+        payload:
+          type: object
+          additionalProperties: true
+        metadata:
+          type: object
+          additionalProperties: true
+        priority:
+          enum: [Normal, High]
+    NotificationAck:
+      type: object
+      properties:
+        notificationId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+    NotificationDto:
+      type: object
+      properties:
+        notificationId:
+          type: string
+        templateId:
+          type: string
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        recipient:
+          type: string
+        status:
+          $ref: '#/components/schemas/NotificationStatus'
+        sentAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
+    PagedNotificationResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NotificationDto'
+    UserPreferenceDto:
+      type: object
+      properties:
+        userId:
+          type: string
+        preferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+        quietHours:
+          type: object
+          properties:
+            start:
+              type: string
+              format: time
+            end:
+              type: string
+              format: time
+    UpdatePreferenceRequest:
+      type: object
+      properties:
+        preferences:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChannelPreference'
+        quietHours:
+          type: object
+          properties:
+            start:
+              type: string
+              format: time
+            end:
+              type: string
+              format: time
+    ChannelPreference:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        enabled:
+          type: boolean
+        categories:
+          type: array
+          items:
+            type: string
+    ChannelStatusDto:
+      type: object
+      properties:
+        channel:
+          $ref: '#/components/schemas/ChannelType'
+        providerName:
+          type: string
+        status:
+          enum: [Healthy, Degraded, Down]
+        lastHeartbeat:
+          type: string
+          format: date-time
+security:
+  - bearerAuth: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,113 +1,157 @@
-## Architecture Overview
+# Architecture Overview
 
-### 1. Vision and Scope
-- **Domain**: Retail food marketplace providing multi-vendor, multi-branch operations with customer PWA, admin portal, and vendor portal.
-- **Objectives**:
-  - Fast, reliable shopping experience (<3s page load, ≥10k concurrent users).
-  - Multi-lingual, multi-currency support; RTL-first UX.
-  - Full observability, CI/CD ready, modular microservices that scale independently.
-  - Event-driven backbone for consistency across services.
-
----
-
-### 2. High-Level Architecture
-- **Pattern**: Microservices with CQRS, database per service, event-driven integration.
-- **Transport**:
-  - HTTP/REST via **YARP API Gateway**.
-  - Async messaging via **RabbitMQ** (events + commands).
-- **Data Stores**:
-  - **SQL Server** for transactional/write workloads (one schema per service).
-  - **PostgreSQL** for read models, analytics, centralized logging, homepage snapshots.
-- **Runtime**:
-  - **.NET 8** services containerized with Docker.
-  - Local orchestration via `docker-compose`, production-ready for K8s.
-- **Security**:
-  - TLS for transport, JWT for auth, OTP via SMS/email, rate limiting, secret management.
-- **Observability**:
-  - OpenTelemetry exporters, centralized logs in PostgreSQL, dashboards for uptime and SLA.
+## 1. Vision & Scope
+- **Domain**: بازار خرده‌فروشی مواد غذایی با تمرکز بر سفارش آنلاین، مدیریت فروشندگان و عملیات تحویل.
+- **اهداف کلان**:
+  - تجربه خرید سریع (بارگذاری صفحه < ۳ ثانیه) برای ≥۱۰٬۰۰۰ کاربر همزمان.
+  - پشتیبانی کامل از چند زبان/چند ارز و رابط RTL پیش‌فرض.
+  - معماری میکروسرویسی مبتنی بر CQRS، مقیاس‌پذیر و قابل مشاهده‌پذیری کامل.
+  - آماده‌سازی کامل برای CI/CD و استقرار کانتینری.
 
 ---
 
-### 3. Service Inventory & Responsibilities
-| Service | Key Responsibilities | Datastore |
-|---------|---------------------|-----------|
-| **Auth Service** | User accounts, OTP, JWT, Operation ↔ UserGroup mapping, role-based access (SystemAdmin, Supplier, OrderSupport, Customer). | SQL Server `auth-schema` |
-| **Product Service** | SKU & barcode management, available/reserved stock, discount engine (`Supplier`, `Campaign`, `System`, `Customer`, `Order`), bulk inventory API. | SQL Server `product-schema`, Postgres read model |
-| **Order Service** | Single-supplier orders, supplier/customer GeoPoint, shipping & packing cost, `OrderCode`, `DeliveryCode`, line-level discount breakdown. | SQL Server `order-schema`, Postgres read |
-| **Payment & Wallet Service** | Wallet ledger, bank transactions with `BankReference`, gateway metadata, refunds. | SQL Server `payment-schema` |
-| **Delivery Service** | Courier providers, `ProviderTrackingId`, rider info, ship/return workflows. | SQL Server `delivery-schema` |
-| **Notification Service** | Email/SMS/Webhook dispatch for customers, vendors, admins, bikers. Public announcements for homepage. | SQL Server `notification-schema` |
-| **Vendor Service** | Vendor legal profiles, stores (geo coverage), vendor agents, compliance documents. | SQL Server `vendor-schema` |
-| **Campaign Service** | Campaign lifecycle, featured products, countdown promos, event publication. | SQL Server `campaign-schema` |
-| **Homepage Aggregator** | Collects featured products (default supplier), campaigns, notifications; writes snapshot to Postgres for PWA. | PostgreSQL `homepage_snapshot` |
-| **Retail Integration Service** (future) | Connects external retail chains for inventory/order syncing. | TBD |
-| **Reporting Service** | Aggregated analytics, dashboard feeds (leverages Postgres). | PostgreSQL |
+## 2. فناوری‌ها و لایه‌ها
+| لایه | فناوری‌ها |
+|------|------------|
+| Backend | .NET 8، ASP.NET Core، CQRS، EF Core |
+| Frontend | **ASP.NET Core MVC + Razor Pages** (PWA) |
+| API Gateway | YARP |
+| Messaging | RabbitMQ |
+| پایگاه‌داده | SQL Server (نوشتن)، PostgreSQL (خواندن، آنالیتیکس، لاگ) |
+| Containerization | Docker، Docker Compose |
+| Observability | OpenTelemetry، Serilog (لاگ در PostgreSQL)، Dashboards |
+| CI/CD | GitHub Actions (workflowهای آماده و غیرفعال) |
 
 ---
 
-### 4. Data Flow Summary
-
-1. **Customer Journey**:
-   - PWA calls `/api/homepage` (YARP → Homepage Aggregator).
-   - Aggregator fetches Product/Campaign/Notification APIs, writes Postgres snapshot.
-   - Customer searches products (Product Service read model in Postgres) and adds to cart (Cart handled client-side / session service).
-   - Checkout triggers Order Service (writes to SQL Server), emits `OrderCreated`.
-   - Payment Service processes wallet/bank, emits `PaymentSucceeded`.
-   - Delivery Service assigns courier, updates status via events.
-   - Notification Service sends updates (SMS/email/webhook) on order and delivery milestones.
-
-2. **Vendor Operations**:
-   - Vendor Portal hits Vendor Service for profile, Product Service for listings, Order Service for fulfillment queues.
-   - Bulk inventory updates via Product API; events propagate to read models.
-
-3. **Admin Operations**:
-   - Admin Portal manages campaigns, announcements, user roles.
-   - CRUD actions stored in respective services; changes broadcast via RabbitMQ for syncing caches/read models.
+## 3. معماری کلان
+- **Microservices + CQRS**: هر سرویس پایگاه‌داده مستقل و الگوی Outbox برای انتشار رویدادها.
+- **Event-Driven**: تبادل رویدادها و فرمان‌ها از طریق RabbitMQ (مثلاً `OrderCreated`, `PaymentCaptured`).
+- **API Gateway (YARP)**: نقطه ورودی واحد برای احراز هویت، مسیریابی، Rate Limiting.
+- **Read Models**: پردازش رویدادها و ساخت Snapshot در PostgreSQL جهت پاسخ‌دهی سریع وب‌سایت.
+- **Security**: ارتباطات TLS، JWT داخلی/خارجی، OTP روی موبایل، محافظت OWASP Top 10، مدیریت Secret.
 
 ---
 
-### 5. Integration Patterns
-- **YARP API Gateway**: unified ingress, TLS termination, routing to microservices, rate limiting, auth enforcement.
+## 4. سرویس‌ها و مسئولیت‌ها
+| سرویس | شرح |
+|-------|-----|
+| **Auth Service** | ثبت‌نام، OTP، JWT (داخلی/خارجی)، نقش‌ها (SystemAdmin, Supplier, OrderSupport, Customer)، نگاشت Operation ↔ UserGroup برای منوها. |
+| **Product Service** | SKU، بارکد، موجودی (Available/Reserved)، محاسبه قیمت نهایی با ۵ نوع تخفیف (`Supplier`, `Campaign`, `System`, `Customer`, `Order`)، Bulk Update Inventory. |
+| **Order Service** | سفارش تک‌تأمین‌کننده با `SupplierId` و `GeoPoint`، هزینه حمل/بسته‌بندی، `OrderCode` و `DeliveryCode`. |
+| **Payment & Wallet Service** | تراکنش‌های بانکی/کیف پول، نگهداری `BankReference`, Gateway، دفتر کل کیف پول چندارزی. |
+| **Delivery Service** | مدیریت CourierProvider، `ProviderTrackingId`، بایکرها، عملیات تحویل/بازگشت، اتصال به Snapp Box، Miare، Alopeyk، Tapsi. |
+| **Notification Service** | ارسال ایمیل/SMS/Webhook برای مشتری، مدیر، پشتیبان، فروشنده، بایکر؛ اعلان‌های عمومی برای صفحه اصلی. |
+| **Vendor Service** | پروفایل حقوقی، فروشگاه‌ها (آدرس و محدوده جغرافیایی)، Vendor Agents، اسناد تطبیق (حذف حساب بانکی). |
+| **Campaign Service** | مدیریت جشنواره‌ها، Featured Products، شمارش معکوس، انتشار رویداد. |
+| **Reporting Service** | گزارش‌گیری و داشبوردها با PostgreSQL. |
+| **Retail Integration Service** | (آماده توسعه) اتصال به زنجیره‌های خرده‌فروشی، همگام‌سازی موجودی و سفارش. |
+| **Homepage Aggregator** | گردآوری محصولات منتخب، کمپین‌ها، اعلان‌ها و ایجاد Snapshot در PostgreSQL برای PWA. |
+
+---
+
+## 5. جریان‌های کلیدی
+
+### 5.1 سفر مشتری
+1. درخواست `/api/homepage` → YARP → Homepage Aggregator → Snapshot Postgres.
+2. جستجو و مرور محصول با استفاده از Read Model در Postgres (RT < ۱ ثانیه).
+3. ثبت سفارش → Order Service (SQL Server) → رویداد `OrderCreated`.
+4. پرداخت → Payment & Wallet → رویداد `PaymentSucceeded`.
+5. تحویل → Delivery Service (انتخاب Courier، `ProviderTrackingId`).
+6. اعلان‌ها → Notification Service (SMS/Email/Webhook/Announcement).
+
+### 5.2 عملیات فروشنده
+- مدیریت پروفایل و فروشگاه در Vendor Service.
+- مدیریت موجودی/محصول در Product Service (API + Bulk Update).
+- پردازش سفارش‌های تک‌تأمین‌کننده در Order Service.
+- مانیتورینگ کیف پول و پرداخت‌های تسویه در Payment Service.
+
+### 5.3 مدیریت سیستم
+- دسترسی از Admin Portal به Auth, Product, Order, Vendor.
+- مدیریت نقش‌ها و Operationها.
+- ایجاد کمپین‌ها و اعلان‌ها.
+- مشاهده گزارش‌ها و Dashboardها از Reporting Service.
+
+---
+
+## 6. Customer PWA (ASP.NET Core MVC + Razor)
+- **Layout RTL-first** با انتخابگر زبان/ارز، هدر چسبنده، ناوبری Mega Menu.
+- **ViewComponents**: `FeaturedProducts`, `CampaignCarousel`, `PublicAnnouncements`.
+- **PWA**: Service Worker، Offline Cache، Manifest و Install Prompt.
+- **Localization**: `IStringLocalizer`، Resourceهای فارسی/عربی/انگلیسی/ترکی/اردو.
+- **Styling**: رنگ آبی کاربنی (#2A2A81) + طلایی (#F9A825) + پس‌زمینه کرم (#FFF8E1)، فونت وزیر/شبنم، کارت‌های گوشه‌گرد ۱۰px.
+- **Testing**: Playwright/Selenium برای سناریوهای End-to-End.
+
+---
+
+## 7. داده و ذخیره‌سازی
+- **SQL Server**: برای Write Model هر سرویس با طرح جداگانه (`auth`, `product`, …).
+- **PostgreSQL**:
+  - Read Models (Product، Order، Homepage Snapshot).
+  - لاگ‌های ساخت‌یافته و Analytics.
+- **Backup & Replication**: سیاست‌گذاری برای SQL Server و PostgreSQL، پشتیبان‌گیری خودکار و بازگردانی.
+- **Data Retention**: چرخه حیات داده، انطباق با GDPR.
+
+---
+
+## 8. پیام‌رسانی و یکپارچگی
 - **RabbitMQ**:
-  - Domain events (`ProductStockAdjusted`, `OrderPlaced`, `PaymentCaptured`, `DeliveryStatusChanged`, `CampaignPublished`, `PublicNotificationUpdated`).
-  - Integration commands (e.g., Delivery Service command queue).
-- **Outbox Pattern**: each service persists events in SQL Server outbox table, background dispatcher publishes to RabbitMQ to guarantee delivery.
-- **Read Models**: Event processors project SQL Server writes into PostgreSQL for fast reads (Product, Order, Homepage).
+  - تبادل رویدادها (`topic exchange`).
+  - صف فرمان‌ها برای عملیات همزمان (مثلاً Delivery Commands).
+- **Outbox Pattern**: انتشار تضمینی رویدادها از پایگاه‌داده تراکنشی.
+- **Integration**:
+  - درگاه‌های پرداخت خارجی.
+  - SMS/Email Providers.
+  - Google Maps API برای Geo و نقشه.
+  - سرویس‌های حمل (Snapp Box, Miare, Alopeyk, Tapsi).
+  - API شرکت‌های خرده‌فروشی (رفاه، اتکا، شهروند، هایپراستار).
 
 ---
 
-### 6. Deployment & Infrastructure
-- **Local**: `docker-compose.local.yml` spins up SQL Server, Postgres, RabbitMQ, services, gateways.
-- **CI Pipelines** (prepared, not active):
-  - `.github/workflows/backend-ci.yml`: dotnet build/test, image build.
-  - `.github/workflows/frontend-ci.yml`: Node build/test/lint for portals + PWA.
-  - `.github/workflows/docker-publish.yml`: build & push service images.
-- **Environment Promotion**: Dev → Staging → Prod with configuration per service; secrets managed via environment vault (e.g., Azure Key Vault/HashiCorp Vault). 
+## 9. امنیت و تطبیق
+- TLS/SSL برای تمام ارتباطات.
+- JWT + OTP (موبایل/ایمیل)، Rate Limiting در Gateway.
+- ممنوعیت حملات OWASP Top 10 (Input Validation، CSRF، XSS).
+- Secret Management (Azure Key Vault/HashiCorp Vault).
+- نقش‌های مجزا برای SystemAdmin، Supplier، OrderSupport، Customer.
+- سیاست دسترسی مبتنی بر Operation/UserGroup.
+- انطباق با GDPR، مدیریت داده‌های حساس و رمزنگاری در حالت سکون.
 
 ---
 
-### 7. Non-Functional Requirements
-- **Performance**: homepage API < 1s via snapshot + caching; overall page load < 3s.
-- **Scalability**: horizontal scaling per service; stateless compute with sticky sessions avoided.
-- **Availability**: target 99.9%; health probes + circuit breakers (Polly) per service.
-- **Security & Compliance**:
-  - TLS/SSL enforced, JWT auth, OTP, OWASP Top 10 protections, rate limiting, GDPR alignment.
-  - Secure secret storage, encrypted databases at rest, replication + automated backups.
+## 10. عملکرد و مقیاس‌پذیری
+- بارگذاری صفحه < ۳ ثانیه، API زیر ۱ ثانیه (برای خواندن).
+- مقیاس‌پذیری افقی برای هر سرویس (Stateless).
+- محدودیت اتصال در Gateway، استفاده از Polly برای Circuit Breaker/Retry.
+- کش سمت سرویس (Memory Cache/Redis اختیاری) برای داده‌های پرمصرف.
+- Service Worker برای کش سمت کلاینت.
 
 ---
 
-### 8. Observability & Operations
-- **Logging**: structured logs (Serilog) shipped to PostgreSQL + centralized dashboard.
-- **Metrics**: Prometheus-compatible exporters (via OpenTelemetry) for request latency, error rates, queue depth.
-- **Tracing**: Distributed tracing across gateway + services for request correlation.
-- **Alerting**: thresholds on availability (SLO), RabbitMQ lag, service CPU/memory.
-- **Data Retention**: policies for transactional data, audit logs, and customer data lifecycle.
+## 11. مشاهده‌پذیری و عملیات
+- **Logging**: Serilog → PostgreSQL + Dashboards.
+- **Metrics**: OpenTelemetry → Prometheus-compatible؛ سنجه‌های latency، error rate، queue depth.
+- **Tracing**: Distributed tracing از Gateway تا سرویس‌ها با Correlation ID.
+- **Alerting**: بر اساس SLA/SLO، مصرف CPU/RAM، lag صف‌ها.
+- **Runbooks**: دستورات اضطراری برای پاک‌سازی صف، بازسازی read model، Rollback دیتابیس.
 
 ---
 
-### 9. Future Enhancements
-- Supplier Service reintroduction (if business requires supplier-specific workflows distinct from vendors).
-- Personalization engine for homepage recommendations.
-- Full automation of CI/CD pipelines post repository migration.
-- Integration with additional third-party couriers and retail chains.
-- Feature flags for staged rollout of campaigns and UI experiments.
+## 12. استقرار و CI/CD
+- **محیط توسعه**: Docker Compose (SQL Server، PostgreSQL، RabbitMQ، سرویس‌ها، Customer MVC).
+- **پکیج Docker**: Dockerfile اختصاصی برای هر سرویس + Customer MVC.
+- **GitHub Actions** (غیرفعال):
+  - `backend-ci.yml`: dotnet restore/build/test + build image.
+  - `frontend-mvc-ci.yml`: build/test Customer MVC.
+  - `docker-publish.yml`: انتشار تصاویر.
+- **پشته استقرار**: Dev → Staging → Prod با کانفیگ جداگانه، Secrets از Vault، قابلیت ارتقاء به Kubernetes.
+
+---
+
+## 13. آینده و توسعه‌های بعدی
+- اتوماسیون کامل CI/CD پس از آماده‌سازی Secrets.
+- موتور شخصی‌سازی پیشنهادها (AI/ML) برای صفحه اصلی.
+- بازگرداندن Supplier Service در صورت نیاز به تفکیک فراتر از Vendor.
+- افزایش یکپارچگی با Courier و Retail Partners.
+- Feature Flag برای کمپین‌ها و آزمایش‌های UI.
+
