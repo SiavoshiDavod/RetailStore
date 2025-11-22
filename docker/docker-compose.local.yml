@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      SA_PASSWORD: "YourStrong!Passw0rd"
+      ACCEPT_EULA: "Y"
+    ports:
+      - "1433:1433"
+    healthcheck:
+      test: ["CMD", "/opt/mssql-tools/bin/sqlcmd", "-S", "localhost", "-U", "sa", "-P", "YourStrong!Passw0rd", "-Q", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  apis:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    depends_on:
+      - sqlserver
+    ports:
+      - "5000:80"
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    depends_on:
+      - apis
+    ports:
+      - "8080:80"
+  client:
+    image: httpd:alpine
+    ports:
+      - "8081:80"
