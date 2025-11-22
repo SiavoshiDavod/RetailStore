@@ -1,45 +1,112 @@
+# filename: auth-service.yaml
 openapi: 3.0.3
 info:
   title: Auth Service API
-  version: 1.0.0
-  description: >
-    سرویس احراز هویت و مجوزدهی پلتفرم خرده‌فروشی. مدیریت کاربران، نقش‌ها، منوها
-    و صدور JWT برای سرویس‌های داخلی و خارجی. پشتیبانی از نقش‌های SystemAdmin،
-    Supplier، OrderSupport، Customer و سایر نقش‌های مشتق‌شده.
+  version: 2.5.0
+  description: |
+    سرویس مرکزی احراز هویت و مجوزدهی پلتفرم بازار خرده‌فروشی مواد غذایی  
+    معماری CQRS: Write Side (SQL Server) | Read Side + Logs (PostgreSQL)  
+    پشتیبانی کامل از ثبت‌نام OTP، JWT داخلی/خارجی، UserGroup + Operation برای منوی داینامیک
 servers:
   - url: https://api.marketplace.local/auth
     description: Production
   - url: https://api.marketplace.sbx/auth
     description: Sandbox
+
 tags:
+  - name: Public
+    description: عملیات عمومی (بدون احراز هویت)
   - name: Authentication
-  - name: Users
-  - name: Roles
-  - name: Operations
+    description: ورود، ثبت‌نام، OTP، توکن
+  - name: Profile
+    description: پروفایل و منوی کاربر جاری
+  - name: Admin
+    description: مدیریت کاربران، گروه‌ها و عملیات (فقط SystemAdmin)
+
 paths:
-  /api/auth/login:
+  # ثبت‌نام و OTP
+  /api/public/register:
     post:
-      tags: [Authentication]
-      summary: ورود کاربر و دریافت توکن
+      tags: [Public]
+      summary: ثبت‌نام کاربر جدید (مشتری یا فروشنده)
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/LoginRequest'
+              $ref: '#/components/schemas/RegisterRequest'
       responses:
-        '200':
-          description: موفقیت
+        '201':
+          description: کاربر ایجاد شد – OTP ارسال شد
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          description: اعتبارسنجی ناموفق
+                $ref: '#/components/schemas/RegisterResponse'
+
+  /api/public/verify-otp:
+    post:
+      tags: [Public]
+      summary: تأیید OTP (ثبت‌نام، ورود، تغییر موبایل)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: تأیید موفق – توکن صادر شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  # ورود با رمز
+  /api/public/login/password:
+    post:
+      tags: [Public]
+      summary: ورود با موبایل و رمز عبور
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordLoginRequest'
+      responses:
+        '200':
+          description: ورود موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  # ورود با OTP
+  /api/public/login/otp/request:
+    post:
+      tags: [Public]
+      summary: درخواست ارسال OTP برای ورود
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mobile]
+              properties:
+                mobile:
+                  type: string
+                  pattern: ^\+98\d{10}$
+      responses:
+        '202':
+          description: OTP ارسال شد
+
+  # نوسازی توکن
   /api/auth/refresh:
     post:
       tags: [Authentication]
       summary: نوسازی توکن دسترسی
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -51,344 +118,259 @@ paths:
                   type: string
       responses:
         '200':
-          description: موفقیت
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LoginResponse'
-        '401':
-          description: توکن نامعتبر یا منقضی
+                $ref: '#/components/schemas/TokenResponse'
+
   /api/auth/logout:
     post:
       tags: [Authentication]
-      summary: باطل‌کردن refresh token جاری
+      summary: خروج و ابطال توکن
+      security:
+        - bearerAuth: []
       responses:
-        '204':
-          description: موفق
-  /api/users:
+        '204': {}
+
+  # پروفایل و منو (Read Side – PostgreSQL)
+  /api/users/me:
     get:
-      tags: [Users]
-      summary: فهرست کاربران با فیلتر
-      parameters:
-        - in: query
-          name: userType
-          schema:
-            $ref: '#/components/schemas/UserType'
-        - in: query
-          name: status
-          schema:
-            enum: [Active, Suspended, Pending]
-        - in: query
-          name: page
-          schema:
-            type: integer
-        - in: query
-          name: pageSize
-          schema:
-            type: integer
+      tags: [Profile]
+      summary: پروفایل کامل کاربر جاری (با گروه‌ها و دسترسی‌ها)
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: لیست کاربران
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PagedUserResponse'
-    post:
-      tags: [Users]
-      summary: ایجاد کاربر جدید
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateUserRequest'
-      responses:
-        '201':
-          description: ایجاد شد
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDto'
-        '409':
-          description: تکراری بودن ایمیل یا موبایل
-  /api/users/{userId}:
+                $ref: '#/components/schemas/CurrentUserDto'
+
+  /api/users/me/menu:
     get:
-      tags: [Users]
-      summary: مشاهده جزئیات کاربر
-      parameters:
-        - $ref: '#/components/parameters/UserId'
+      tags: [Profile]
+      summary: منوی داینامیک کاربر (از PostgreSQL Read Model)
+      security:
+        - bearerAuth: []
       responses:
         '200':
-          description: موفق
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserDto'
-        '404':
-          description: یافت نشد
-    put:
-      tags: [Users]
-      summary: به‌روزرسانی کامل کاربر
-      parameters:
-        - $ref: '#/components/parameters/UserId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateUserRequest'
-      responses:
-        '200':
-          description: موفق
-    patch:
-      tags: [Users]
-      summary: تغییر وضعیت کاربر
-      parameters:
-        - $ref: '#/components/parameters/UserId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              properties:
-                status:
-                  enum: [Active, Suspended]
-      responses:
-        '200':
-          description: موفق
-  /api/users/{userId}/roles:
-    get:
-      tags: [Users]
-      summary: دریافت نقش‌های کاربر
-      parameters:
-        - $ref: '#/components/parameters/UserId'
-      responses:
-        '200':
-          description: لیست نقش‌ها
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/RoleDto'
-    put:
-      tags: [Users]
-      summary: جایگزینی نقش‌های کاربر
+                  $ref: '#/components/schemas/MenuItemDto'
+
+  # مدیریت توسط ادمین (Write Side – SQL Server)
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      summary: جستجوی کاربران
+      security:
+        - bearerAuth: [SystemAdmin]
       parameters:
-        - $ref: '#/components/parameters/UserId'
+        - name: mobile
+          in: query
+          schema: { type: string }
+        - name: groupCode
+          in: query
+          schema: { type: string }
+        - name: page
+          in: query
+          schema: { type: integer, default: 1 }
+        - name: pageSize
+          in: query
+          schema: { type: integer, default: 20 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUserAdminDto'
+
+  /api/admin/user-groups:
+    get:
+      tags: [Admin]
+      summary: لیست گروه‌های کاربری
+      security:
+        - bearerAuth: [SystemAdmin]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserGroupDto'
+
+    post:
+      tags: [Admin]
+      summary: ایجاد گروه جدید
+      security:
+        - bearerAuth: [SystemAdmin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserGroupRequest'
+      responses:
+        '201': {}
+
+  /api/admin/user-groups/{groupId}/operations:
+    put:
+      tags: [Admin]
+      summary: جایگزینی عملیات گروه
+      security:
+        - bearerAuth: [SystemAdmin]
+      parameters:
+        - $ref: '#/components/parameters/GroupId'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: array
-              items:
-                type: string
-              example: ["Supplier", "OrderSupport"]
+              items: { type: string }
       responses:
-        '204':
-          description: موفق
-  /api/roles:
+        '204': {}
+
+  /api/admin/operations:
     get:
-      tags: [Roles]
-      summary: لیست نقش‌ها و عملیات منتسب
+      tags: [Admin]
+      summary: لیست تمام عملیات سیستم (منو + دسترسی)
+      security:
+        - bearerAuth: [SystemAdmin]
       responses:
         '200':
-          description: موفق
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RoleDto'
-    post:
-      tags: [Roles]
-      summary: ایجاد نقش سفارشی
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateRoleRequest'
-      responses:
-        '201':
-          description: ایجاد شد
-  /api/roles/{roleId}:
-    delete:
-      tags: [Roles]
-      summary: حذف نقش
-      parameters:
-        - name: roleId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: حذف شد
-  /api/operations:
-    get:
-      tags: [Operations]
-      summary: لیست Operation ها برای نگاشت منو
-      responses:
-        '200':
-          description: موفق
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/OperationDto'
+
 components:
   parameters:
-    UserId:
-      name: userId
+    GroupId:
+      name: groupId
       in: path
       required: true
       schema:
-        format: uuid
         type: string
+        format: uuid
+
   schemas:
-    UserType:
-      type: string
-      enum:
-        - SystemAdmin
-        - Supplier
-        - Vendor
-        - OrderSupport
-        - Customer
-        - DeliveryAgent
-    LoginRequest:
+    RegisterRequest:
       type: object
-      required: [username, password]
+      required: [mobile, fullName]
       properties:
-        username:
-          type: string
-        password:
-          type: string
-        deviceId:
-          type: string
-        otp:
-          type: string
-    LoginResponse:
+        mobile:     { type: string, pattern: ^\+98\d{10}$ }
+        fullName:   { type: string }
+        email:      { type: string, format: email }
+        userType:   { type: string, enum: [Customer, Vendor] }
+
+    RegisterResponse:
       type: object
       properties:
-        accessToken:
-          type: string
-        refreshToken:
-          type: string
-        expiresIn:
-          type: integer
-        user:
-          $ref: '#/components/schemas/UserDto'
-        permissions:
-          type: array
-          items:
-            type: string
-    UserDto:
+        userId:   { type: string, format: uuid }
+        message:  { type: string, example: "کد تأیید ارسال شد" }
+
+    VerifyOtpRequest:
+      type: object
+      required: [mobile, code]
+      properties:
+        mobile: { type: string }
+        code:   { type: string, pattern: ^\d{6}$ }
+
+    PasswordLoginRequest:
+      type: object
+      required: [mobile, password]
+      properties:
+        mobile:    { type: string }
+        password:  { type: string, format: password }
+
+    TokenResponse:
       type: object
       properties:
-        userId:
-          type: string
-          format: uuid
-        fullName:
-          type: string
-        email:
-          type: string
-        mobile:
-          type: string
-        userType:
-          $ref: '#/components/schemas/UserType'
-        status:
-          enum: [Active, Suspended, Pending]
-        roles:
-          type: array
-          items:
-            type: string
-        createdAt:
-          type: string
-          format: date-time
-    PagedUserResponse:
+        accessToken:   { type: string }
+        refreshToken:  { type: string }
+        expiresIn:     { type: integer, example: 3600 }
+        tokenType:     { type: string, example: Bearer }
+        user:          { $ref: '#/components/schemas/CurrentUserDto' }
+
+    CurrentUserDto:
       type: object
       properties:
-        total:
-          type: integer
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/UserDto'
-    CreateUserRequest:
-      type: object
-      required: [fullName, email, mobile, password, userType]
-      properties:
-        fullName:
-          type: string
-        email:
-          type: string
-          format: email
-        mobile:
-          type: string
-        password:
-          type: string
-          format: password
-        userType:
-          $ref: '#/components/schemas/UserType'
-        roles:
-          type: array
-          items:
-            type: string
-    UpdateUserRequest:
+        userId:       { type: string, format: uuid }
+        fullName:     { type: string }
+        mobile:       { type: string }
+        email:        { type: string }
+        userType:     { type: string, enum: [Customer, Vendor, SystemAdmin, Supplier, OrderSupport, DeliveryAgent] }
+        groups:       { type: array, items: { type: string } }
+        permissions:  { type: array, items: { type: string } }
+
+    MenuItemDto:
       type: object
       properties:
-        fullName:
-          type: string
-        email:
-          type: string
-        mobile:
-          type: string
-        userType:
-          $ref: '#/components/schemas/UserType'
-    RoleDto:
+        code:       { type: string }
+        title:      { type: string }
+        path:       { type: string }
+        icon:       { type: string }
+        sortOrder:  { type: integer }
+        children:   { type: array, items: { $ref: '#/components/schemas/MenuItemDto' } }
+
+    UserGroupDto:
       type: object
       properties:
-        roleId:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        operations:
-          type: array
-          items:
-            type: string
-    CreateRoleRequest:
+        groupId:        { type: string, format: uuid }
+        code:           { type: string }
+        name:           { type: string }
+        description:    { type: string }
+        isSystem:       { type: boolean }
+        operationCodes: { type: array, items: { type: string } }
+
+    CreateUserGroupRequest:
       type: object
-      required: [name, operations]
+      required: [code, name]
       properties:
-        name:
-          type: string
-        description:
-          type: string
-        operations:
-          type: array
-          items:
-            type: string
+        code:        { type: string }
+        name:        { type: string }
+        description: { type: string }
+        isSystem:    { type: boolean, default: false }
+
     OperationDto:
       type: object
       properties:
-        code:
-          type: string
-        name:
-          type: string
-        category:
-          type: string
-        menuPath:
-          type: string
-security:
-  - bearerAuth: []
-components:
+        operationId: { type: string, format: uuid }
+        code:        { type: string }
+        name:        { type: string }
+        category:    { type: string }
+        menuPath:    { type: string, nullable: true }
+        menuTitle:   { type: string }
+        icon:        { type: string }
+        sortOrder:   { type: integer }
+
+    PagedUserAdminDto:
+      type: object
+      properties:
+        total: { type: integer }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:   { type: string, format: uuid }
+              fullName: { type: string }
+              mobile:   { type: string }
+              groups:   { type: array, items: { type: string } }
+              status:   { type: string }
+
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+
+security:
+  - bearerAuth: []

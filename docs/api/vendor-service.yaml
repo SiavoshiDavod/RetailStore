@@ -1,0 +1,679 @@
+# filename: vendor-service.yaml
+openapi: 3.0.3
+info:
+  title: Vendor Service API
+  version: 1.1.0
+  description: >
+    سرویس مدیریت فروشندگان و فروشگاه‌های پلتفرم بازار خرده‌فروشی مواد غذایی  
+    شامل پروفایل حقوقی، فروشگاه‌های فیزیکی و محدوده سرویس‌دهی، کاربران نماینده (Agent)،  
+    اسناد تطبیق و گردش‌کار تأیید کامل.
+servers:
+  - url: https://api.marketplace.local/vendor
+    description: Production
+  - url: https://api.marketplace.sbx/vendor
+    description: Sandbox
+tags:
+  - name: Vendors
+    description: پروفایل حقوقی فروشندگان
+  - name: Stores
+    description: فروشگاه‌ها و محدوده جغرافیایی سرویس‌دهی
+  - name: Users
+    description: کاربران نماینده فروشنده (Owner, Manager, InventoryAgent …)
+  - name: Documents
+    description: اسناد تطبیق و انطباق
+  - name: Audit
+    description: تاریخچه تغییرات و عملیات
+paths:
+  /api/vendors:
+    post:
+      tags: [Vendors]
+      summary: ایجاد فروشنده جدید (وضعیت Draft)
+      security:
+        - bearerAuth: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVendorRequest'
+      responses:
+        '201':
+          description: فروشنده ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorDto'
+
+    get:
+      tags: [Vendors]
+      summary: جستجو و فیلتر فروشندگان
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/VendorStatus'
+        - name: city
+          in: query
+          schema:
+            type: string
+        - name: slaTier
+          in: query
+          schema:
+            type: string
+            enum: [Basic, Premium, Enterprise]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: لیست فروشندگان
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedVendorResponse'
+
+  /api/vendors/{vendorId}:
+    get:
+      tags: [Vendors]
+      summary: جزئیات کامل فروشنده
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner, VendorManager]
+      responses:
+        '200':
+          description: پروفایل فروشنده
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorDetailDto'
+
+    put:
+      tags: [Vendors]
+      summary: ویرایش پروفایل حقوقی
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateVendorRequest'
+      responses:
+        '200':
+          description: بروزرسانی موفق
+
+    patch:
+      tags: [Vendors]
+      summary: تغییر وضعیت فروشنده (تأیید، تعلیق، رد و …)
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/VendorStatus'
+                reason:
+                  type: string
+              required: [status]
+      responses:
+        '204':
+          description: وضعیت تغییر کرد
+
+  /api/vendors/{vendorId}/stores:
+    post:
+      tags: [Stores]
+      summary: افزودن فروشگاه جدید
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner, VendorManager]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateStoreRequest'
+      responses:
+        '201':
+          description: فروشگاه ایجاد شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreDto'
+
+  /api/vendors/{vendorId}/stores/{storeId}:
+    get:
+      tags: [Stores]
+      summary: جزئیات فروشگاه
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/StoreId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StoreDto'
+
+    put:
+      tags: [Stores]
+      summary: ویرایش فروشگاه
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/StoreId'
+      security:
+        - bearerAuth: [Admin, VendorOwner, VendorManager]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStoreRequest'
+      responses:
+        '200':
+          description: بروزرسانی موفق
+
+    patch:
+      tags: [Stores]
+      summary: تغییر وضعیت فروشگاه (فعال/موقتاً بسته/غیرفعال)
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/StoreId'
+      security:
+        - bearerAuth: [Admin, VendorOwner, VendorManager]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/StoreStatus'
+                reason:
+                  type: string
+              required: [status]
+      responses:
+        '204': {}
+
+  /api/vendors/{vendorId}/users:
+    get:
+      tags: [Users]
+      summary: لیست کاربران نماینده فروشنده
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VendorUserDto'
+
+    post:
+      tags: [Users]
+      summary: افزودن کاربر نماینده
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVendorUserRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorUserDto'
+
+  /api/vendors/{vendorId}/documents:
+    post:
+      tags: [Documents]
+      summary: آپلود سند تطبیق
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+      security:
+        - bearerAuth: [Admin, VendorOwner, ComplianceAgent]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceDocumentDto'
+
+  /api/vendors/{vendorId}/documents/{documentId}/status:
+    patch:
+      tags: [Documents]
+      summary: تأیید/رد سند توسط مدیر
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - $ref: '#/components/parameters/DocumentId'
+      security:
+        - bearerAuth: [Admin, ComplianceOfficer]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/DocumentStatus'
+                notes:
+                  type: string
+              required: [status]
+      responses:
+        '204': {}
+
+  /api/vendors/{vendorId}/audit:
+    get:
+      tags: [Audit]
+      summary: تاریخچه تغییرات فروشنده
+      parameters:
+        - $ref: '#/components/parameters/VendorId'
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+      security:
+        - bearerAuth: [Admin]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditLogDto'
+
+components:
+  parameters:
+    VendorId:
+      name: vendorId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: VND-10045
+    StoreId:
+      name: storeId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: STR-8891
+    DocumentId:
+      name: documentId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    VendorStatus:
+      type: string
+      enum: [Draft, PendingReview, Approved, Suspended, Rejected]
+
+    StoreStatus:
+      type: string
+      enum: [Inactive, Active, TemporarilyClosed]
+
+    DocumentStatus:
+      type: string
+      enum: [Pending, Approved, Rejected, Expired]
+
+    VendorDto:
+      type: object
+      properties:
+        vendorId:
+          type: string
+        legalName:
+          type: string
+        registrationNumber:
+          type: string
+        taxId:
+          type: string
+        status:
+          $ref: '#/components/schemas/VendorStatus'
+        headOfficeAddress:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+          nullable: true
+        slaTier:
+          type: string
+          enum: [Basic, Premium, Enterprise]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    VendorDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/VendorDto'
+        - type: object
+          properties:
+            stores:
+              type: array
+              items:
+                $ref: '#/components/schemas/StoreDto'
+            users:
+              type: array
+              items:
+                $ref: '#/components/schemas/VendorUserDto'
+            documents:
+              type: array
+              items:
+                $ref: '#/components/schemas/ComplianceDocumentDto'
+
+    CreateVendorRequest:
+      type: object
+      required: [legalName, registrationNumber, taxId, headOfficeAddress, contactEmail, contactPhone]
+      properties:
+        legalName:
+          type: string
+        registrationNumber:
+          type: string
+        taxId:
+          type: string
+        headOfficeAddress:
+          type: string
+        contactEmail:
+          type: string
+          format: email
+        contactPhone:
+          type: string
+        logoFile:
+          type: string
+          format: binary
+        slaTier:
+          type: string
+          enum: [Basic, Premium, Enterprise]
+          default: Basic
+
+    UpdateVendorRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateVendorRequest'
+
+    StoreDto:
+      type: object
+      properties:
+        storeId:
+          type: string
+        storeName:
+          type: string
+        storeCode:
+          type: string
+        status:
+          $ref: '#/components/schemas/StoreStatus'
+        addressLine:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        geoPoint:
+          $ref: '#/components/schemas/GeoPoint'
+        serviceArea:
+          type: object
+          description: GeoJSON Polygon یا Circle (radius in meters)
+        openingHours:
+          type: string
+          example: "شنبه تا پنج‌شنبه ۸-۲۲، جمعه ۱۰-۲۰"
+        contactPhone:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateStoreRequest:
+      type: object
+      required: [storeName, addressLine, city, geoPoint]
+      properties:
+        storeName:
+          type: string
+        storeCode:
+          type: string
+        addressLine:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        geoPoint:
+          $ref: '#/components/schemas/GeoPoint'
+        serviceAreaRadiusMeters:
+          type: number
+          description: برای محدوده دایره‌ای
+        serviceAreaPolygon:
+          type: object
+          description: GeoJSON Polygon
+        openingHours:
+          type: string
+        contactPhone:
+          type: string
+
+    UpdateStoreRequest:
+      allOf:
+        - $ref: '#/components/schemas/CreateStoreRequest'
+
+    VendorUserDto:
+      type: object
+      properties:
+        vendorUserId:
+          type: string
+        authUserId:
+          type: string
+          format: uuid
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        mobile:
+          type: string
+        role:
+          type: string
+          enum: [Owner, Manager, InventoryAgent, ComplianceAgent]
+        isActive:
+          type: boolean
+        invitedAt:
+          type: string
+          format: date-time
+          nullable: true
+        joinedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    CreateVendorUserRequest:
+      type: object
+      required: [email, role]
+      properties:
+        fullName:
+          type: string
+        email:
+          type: string
+          format: email
+        mobile:
+          type: string
+        role:
+          type: string
+          enum: [Owner, Manager, InventoryAgent, ComplianceAgent]
+
+    ComplianceDocumentDto:
+      type: object
+      properties:
+        documentId:
+          type: string
+        documentType:
+          type: string
+          enum: [BusinessLicense, HealthCertificate, Contract, TaxCertificate, Other]
+        referenceNumber:
+          type: string
+        issueDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+          nullable: true
+        status:
+          $ref: '#/components/schemas/DocumentStatus'
+        fileUrl:
+          type: string
+          format: uri
+        uploadedBy:
+          type: string
+        uploadedAt:
+          type: string
+          format: date-time
+        reviewedBy:
+          type: string
+          nullable: true
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+
+    UploadDocumentRequest:
+      type: object
+      required: [documentType, file]
+      properties:
+        documentType:
+          type: string
+          enum: [BusinessLicense, HealthCertificate, Contract, TaxCertificate, Other]
+        referenceNumber:
+          type: string
+        issueDate:
+          type: string
+          format: date
+        expiryDate:
+          type: string
+          format: date
+        file:
+          type: string
+          format: binary
+
+    AuditLogDto:
+      type: object
+      properties:
+        auditId:
+          type: string
+        entityType:
+          type: string
+          enum: [Vendor, Store, Document, User]
+        entityId:
+          type: string
+        action:
+          type: string
+        performedBy:
+          type: string
+        performedAt:
+          type: string
+          format: date-time
+        changes:
+          type: object
+          description: JSON diff قبل و بعد
+
+    GeoPoint:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    PagedVendorResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/VendorDto'
+
+    ErrorResponse:
+      type: object
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        status:
+          type: integer
+        traceId:
+          type: string
+
+  responses:
+    BadRequest:
+      description: درخواست نامعتبر
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

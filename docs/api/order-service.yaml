@@ -1,0 +1,306 @@
+openapi: 3.0.3
+info:
+  title: Order Service API
+  version: 1.0.0
+  description: |
+    Order Service API (simplified) — manages orders lifecycle, status updates and queries.
+servers:
+  - url: https://api.marketplace.local
+    description: Production server
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Order:
+      type: object
+      required:
+        - orderId
+        - customerId
+        - items
+        - totalAmount
+        - status
+        - createdAt
+      properties:
+        orderId:
+          type: string
+          example: ORD-10001
+        customerId:
+          type: string
+          example: CUST-500
+        storeId:
+          type: string
+          example: STR-8891
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        totalAmount:
+          type: number
+          format: double
+          example: 125.50
+        currency:
+          type: string
+          example: IRR
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        delivery:
+          $ref: '#/components/schemas/DeliveryInfo'
+        paymentReference:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    OrderItem:
+      type: object
+      required: [productId, quantity, price]
+      properties:
+        productId:
+          type: string
+          example: PROD-330
+        name:
+          type: string
+          example: "Paneer 400g"
+        quantity:
+          type: integer
+          example: 2
+        price:
+          type: number
+          format: double
+          example: 45.00
+    OrderStatus:
+      type: string
+      enum:
+        - Pending
+        - Processing
+        - Shipped
+        - Delivered
+        - Cancelled
+        - Failed
+    DeliveryInfo:
+      type: object
+      properties:
+        address:
+          $ref: '#/components/schemas/Address'
+        eta:
+          type: string
+          format: date-time
+        trackingId:
+          type: string
+    Address:
+      type: object
+      properties:
+        addressLine:
+          type: string
+        city:
+          type: string
+        geoPoint:
+          type: object
+          properties:
+            lat:
+              type: number
+            lng:
+              type: number
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+security:
+  - bearerAuth: []
+paths:
+  /api/orders:
+    post:
+      summary: Create a new order
+      description: Create an order in Draft state and reserve inventory.
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, storeId, items, totalAmount, currency]
+              properties:
+                customerId:
+                  type: string
+                storeId:
+                  type: string
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/OrderItem'
+                totalAmount:
+                  type: number
+                currency:
+                  type: string
+                notes:
+                  type: string
+      responses:
+        '201':
+          description: Order created
+          headers:
+            Location:
+              description: URL of created resource
+              schema:
+                type: string
+            ETag:
+              description: Resource version tag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/orders/{orderId}:
+    get:
+      summary: Get order details
+      tags:
+        - Orders
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order details
+          headers:
+            ETag:
+              schema:
+                type: string
+              description: Resource version tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/orders:
+    get:
+      summary: Search orders
+      tags:
+        - Orders
+      parameters:
+        - in: query
+          name: customerId
+          schema:
+            type: string
+        - in: query
+          name: storeId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: page
+          schema:
+            type: integer
+            default: 1
+        - in: query
+          name: pageSize
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paged list of orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Order'
+                  total:
+                    type: integer
+  /api/orders/{orderId}/status:
+    patch:
+      summary: Update order status
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: '#/components/schemas/OrderStatus'
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: Invalid status transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /api/orders/{orderId}/cancel:
+    post:
+      summary: Cancel an order
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Cancel accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '409':
+          description: Cannot cancel at this stage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

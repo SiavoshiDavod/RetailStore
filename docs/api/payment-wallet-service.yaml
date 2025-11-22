@@ -1,0 +1,482 @@
+در ادامه، فایل **payment-wallet-service.yaml** را با همان دقت، ساختار تمیز، استاندارد OpenAPI 3.0.3 و جزئیات کامل (مشابه delivery-service.yaml) برای شما آماده کردم:
+
+```yaml
+# filename: payment-wallet-service.yaml
+openapi: 3.0.3
+info:
+  title: Payment & Wallet Service API
+  version: 1.2.0
+  description: >
+    سرویس پرداخت و کیف پول داخلی پلتفرم بازار خرده‌فروشی مواد غذایی  
+    پشتیبانی کامل از کیف پول چندارزی، شارژ از درگاه‌های بانکی، پرداخت سفارش، بازپرداخت خودکار،  
+    تعدیل دستی مدیر و دفتر کل امن با قابلیت گزارش‌گیری دقیق.
+servers:
+  - url: https://api.marketplace.local/payment
+    description: Production
+  - url: https://api.marketplace.sbx/payment
+    description: Sandbox
+tags:
+  - name: Wallet
+    description: عملیات کیف پول مشتری و فروشنده
+  - name: Transactions
+    description: تاریخچه و جزئیات تراکنش‌ها
+  - name: Payments
+    description: پرداخت سفارش با کیف پول یا درگاه بانکی
+  - name: Refunds
+    description: بازپرداخت و لغو تراکنش
+  - name: Admin
+    description: عملیات مدیریتی (تعدیل، گزارش‌گیری)
+paths:
+  /api/wallet/balance:
+    get:
+      tags: [Wallet]
+      summary: دریافت موجودی فعلی کیف پول
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: currency
+          in: query
+          description: ارز مورد نظر (در صورت خالی، ارز پیش‌فرض کاربر)
+          schema:
+            type: string
+            enum: [IRR, AED, USD, EUR, TRY]
+            default: IRR
+      responses:
+        '200':
+          description: موجودی کیف پول
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletBalanceDto'
+
+  /api/wallet/charge:
+    post:
+      tags: [Wallet]
+      summary: ایجاد درخواست شارژ کیف پول از درگاه بانکی
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChargeRequestDto'
+      responses:
+        '201':
+          description: درخواست شارژ ثبت شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChargeResponseDto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '402':
+          $ref: '#/components/responses/PaymentRequired'
+
+  /api/wallet/charge/callback:
+    post:
+      tags: [Wallet]
+      summary: Callback درگاه پرداخت (ورودی مستقیم از درگاه)
+      parameters:
+        - name: gateway
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [zarinpal, mellat, saman, idpay, payir]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: نتیجه پردازش callback
+          content:
+            text/html:
+              example: |
+                <html><body><h1>پرداخت با موفقیت انجام شد</h1></body></html>
+
+  /api/wallet/transactions:
+    get:
+      tags: [Transactions]
+      summary: تاریخچه تراکنش‌های کیف پول
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [All, Charge, Payment, Refund, Adjustment, Settlement]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: لیست تراکنش‌ها
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedTransactionResponse'
+
+  /api/payments/order/{orderId}:
+    post:
+      tags: [Payments]
+      summary: پرداخت سفارش با کیف پول (یا ترکیبی با درگاه)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderPaymentRequestDto'
+      responses:
+        '200':
+          description: پرداخت موفق
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPaymentResponseDto'
+        '402':
+          description: موجودی کافی نیست
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsufficientBalanceError'
+
+  /api/refunds/order/{orderId}:
+    post:
+      tags: [Refunds]
+      summary: درخواست بازپرداخت سفارش (لغو، مرجوعی، تصمیم مدیر)
+      security:
+        - bearerAuth: [Customer, Admin, OrderSupport]
+      parameters:
+        - $ref: '#/components/parameters/OrderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequestDto'
+      responses:
+        '201':
+          description: بازپرداخت ثبت شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponseDto'
+
+  /api/admin/wallet/adjust:
+    post:
+      tags: [Admin]
+      summary: تعدیل دستی کیف پول توسط مدیر (هدیه، جریمه، اصلاح)
+      security:
+        - bearerAuth: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAdjustmentRequestDto'
+      responses:
+        '201':
+          description: تعدیل انجام شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAdjustmentResponseDto'
+
+components:
+  parameters:
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+        example: ORD-2025-11-22-001
+
+  schemas:
+    Currency:
+      type: string
+      enum: [IRR, AED, USD, EUR, TRY]
+      default: IRR
+
+    WalletBalanceDto:
+      type: object
+      properties:
+        userId:
+          type: string
+          format: uuid
+        currency:
+          $ref: '#/components/schemas/Currency'
+        totalBalance:
+          type: number
+          format: double
+        availableBalance:
+          type: number
+          format: double
+          description: موجودی قابل استفاده (پس از کسر رزرو شده)
+        reservedBalance:
+          type: number
+          format: double
+          description: رزرو شده برای سفارشات در جریان
+        updatedAt:
+          type: string
+          format: date-time
+
+    ChargeRequestDto:
+      type: object
+      required: [amount, currency, returnUrl]
+      properties:
+        amount:
+          type: number
+          minimum: 10000
+          description: مبلغ به کوچک‌ترین واحد ارز (مثلاً ریال)
+        currency:
+          $ref: '#/components/schemas/Currency'
+        gateway:
+          type: string
+          enum: [zarinpal, mellat, saman, idpay, payir]
+          default: zarinpal
+        returnUrl:
+          type: string
+          format: uri
+        description:
+          type: string
+          default: "شارژ کیف پول بازار خرده‌فروشی مواد غذایی"
+
+    ChargeResponseDto:
+      type: object
+      properties:
+        chargeId:
+          type: string
+          format: uuid
+        gateway:
+          type: string
+        gatewayPaymentUrl:
+          type: string
+          format: uri
+        authority:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    OrderPaymentRequestDto:
+      type: object
+      properties:
+        useWallet:
+          type: boolean
+          default: true
+        payRemainingWithGateway:
+          type: boolean
+          default: false
+        couponCode:
+          type: string
+          nullable: true
+
+    OrderPaymentResponseDto:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+        status:
+          type: string
+          enum: [Paid, PartiallyPaid, PendingGateway, Failed]
+        amountPaidWithWallet:
+          type: number
+        amountPaidWithGateway:
+          type: number
+        gatewayPaymentUrl:
+          type: string
+          format: uri
+          nullable: true
+        transactionDate:
+          type: string
+          format: date-time
+
+    RefundRequestDto:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [CustomerCancel, SellerCancel, DeliveryFailed, ReturnRequest, AdminDecision]
+        description:
+          type: string
+          maxLength: 500
+          nullable: true
+
+    RefundResponseDto:
+      type: object
+      properties:
+        refundId:
+          type: string
+          format: uuid
+        orderId:
+          type: string
+        amount:
+          type: number
+        currency:
+          $ref: '#/components/schemas/Currency'
+        status:
+          type: string
+          enum: [Requested, Processing, Completed, Rejected]
+        processedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminAdjustmentRequestDto:
+      type: object
+      required: [userId, amount, currency, type, reason]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          description: مثبت = افزایش، منفی = کسر
+        currency:
+          $ref: '#/components/schemas/Currency'
+        type:
+          type: string
+          enum: [Gift, Bonus, Penalty, Correction]
+        reason:
+          type: string
+          maxLength: 500
+
+    AdminAdjustmentResponseDto:
+      type: object
+      properties:
+        adjustmentId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        amount:
+          type: number
+        currency:
+          $ref: '#/components/schemas/Currency'
+        newBalance:
+          type: number
+        performedBy:
+          type: string
+        performedAt:
+          type: string
+          format: date-time
+
+    TransactionDto:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [Charge, Payment, Refund, Adjustment, Settlement]
+        amount:
+          type: number
+        currency:
+          $ref: '#/components/schemas/Currency'
+        status:
+          type: string
+          enum: [Success, Failed, Pending, Reversed]
+        referenceId:
+          type: string
+          description: OrderId / ChargeId / RefundId
+        description:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    PagedTransactionResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionDto'
+
+    InsufficientBalanceError:
+      type: object
+      properties:
+        error:
+          type: string
+          example: InsufficientWalletBalance
+        requiredAmount:
+          type: number
+        availableBalance:
+          type: number
+        currency:
+          $ref: '#/components/schemas/Currency'
+
+    ErrorResponse:
+      type: object
+      properties:
+        title:
+          type: string
+        detail:
+          type: string
+        status:
+          type: integer
+        traceId:
+          type: string
+
+  responses:
+    BadRequest:
+      description: درخواست نامعتبر
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PaymentRequired:
+      description: موجودی کافی نیست
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InsufficientBalanceError'
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

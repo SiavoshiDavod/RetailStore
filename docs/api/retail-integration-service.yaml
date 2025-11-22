@@ -1,0 +1,490 @@
+# filename: retail-integration-service.yaml
+openapi: 3.0.3
+info:
+  title: Retail Integration Service API
+  version: 1.1.0
+  description: >
+    سرویس یکپارچه‌سازی با فروشگاه‌های زنجیره‌ای بزرگ (رفاه، اتکا، شهروند، هایپراستار و …)  
+    همگام‌سازی خودکار موجودی، قیمت، کاتالوگ محصولات، انتقال سفارش و ردیابی وضعیت آماده‌سازی.
+servers:
+  - url: https://api.marketplace.local/retail-integration
+    description: Production
+  - url: https://api.marketplace.sbx/retail-integration
+    description: Sandbox
+tags:
+  - name: Partners
+    description: مدیریت شرکای خرده‌فروشی
+  - name: Catalog
+    description: همگام‌سازی کاتالوگ محصولات
+  - name: Inventory
+    description: همگام‌سازی موجودی فروشگاه‌های زنجیره‌ای
+  - name: Pricing
+    description: همگام‌سازی قیمت و تخفیف
+  - name: Orders
+    description: انتقال و ردیابی سفارشات
+paths:
+  /api/partners:
+    get:
+      tags: [Partners]
+      summary: لیست شرکای خرده‌فروشی متصل
+      security:
+        - bearerAuth: [Admin]
+      responses:
+        '200':
+          description: لیست شرکا
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RetailPartnerDto'
+
+    post:
+      tags: [Partners]
+      summary: ثبت شریک خرده‌فروشی جدید
+      security:
+        - bearerAuth: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRetailPartnerRequest'
+      responses:
+        '201':
+          description: شریک ثبت شد
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailPartnerDto'
+
+  /api/partners/{partnerId}:
+    get:
+      tags: [Partners]
+      summary: جزئیات شریک و وضعیت اتصال
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetailPartnerDetailDto'
+
+    patch:
+      tags: [Partners]
+      summary: فعال/غیرفعال کردن یا بروزرسانی تنظیمات شریک
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                isActive:
+                  type: boolean
+                syncIntervalMinutes:
+                  type: integer
+                apiCredentials:
+                  $ref: '#/components/schemas/ApiCredentials'
+      responses:
+        '204': {}
+
+  /api/partners/{partnerId}/catalog/sync:
+    post:
+      tags: [Catalog]
+      summary: درخواست همگام‌سازی دستی کاتالوگ
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      responses:
+        '202':
+          description: همگام‌سازی در صف قرار گرفت
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncJobResponse'
+
+  /api/partners/{partnerId}/inventory/sync:
+    post:
+      tags: [Inventory]
+      summary: همگام‌سازی دستی موجودی تمام فروشگاه‌های شریک
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncJobResponse'
+
+  /api/partners/{partnerId}/orders:
+    post:
+      tags: [Orders]
+      summary: ارسال سفارش جدید به سیستم شریک (از Order Service فراخوانی می‌شود)
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForwardOrderRequest'
+      responses:
+        '202':
+          description: سفارش در صف ارسال قرار گرفت
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderForwardResponse'
+
+  /api/partners/{partnerId}/orders/{externalOrderId}/status:
+    get:
+      tags: [Orders]
+      summary: دریافت آخرین وضعیت سفارش از سیستم شریک
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+        - $ref: '#/components/parameters/ExternalOrderId'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalOrderStatusDto'
+
+  # Webhook endpoint – دریافت بروزرسانی از شرکای خرده‌فروشی
+  /webhook/{partnerId}/inventory:
+    post:
+      summary: Webhook دریافت تغییرات موجودی از شریک
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InventoryWebhookPayload'
+      responses:
+        '200':
+          description: دریافت موفق
+
+  /webhook/{partnerId}/orders/status:
+    post:
+      summary: Webhook دریافت تغییر وضعیت سفارش از شریک
+      parameters:
+        - $ref: '#/components/parameters/PartnerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusWebhookPayload'
+      responses:
+        '200': {}
+
+  /api/sync-jobs:
+    get:
+      tags: [Partners]
+      summary: وضعیت آخرین جاب‌های همگام‌سازی
+      security:
+        - bearerAuth: [Admin]
+      parameters:
+        - name: partnerId
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [Catalog, Inventory, Price]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SyncJobDto'
+
+components:
+  parameters:
+    PartnerId:
+      name: partnerId
+      in: path
+      required: true
+      schema:
+        type: string
+        example: rafah
+    ExternalOrderId:
+      name: externalOrderId
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    RetailPartnerDto:
+      type: object
+      properties:
+        partnerId:
+          type: string
+          example: rafah
+        name:
+          type: string
+          example: فروشگاه‌های زنجیره‌ای رفاه
+        displayName:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+        isActive:
+          type: boolean
+        lastSyncAt:
+          type: string
+          format: date-time
+          nullable: true
+        healthStatus:
+          type: string
+          enum: [Healthy, Degraded, Down]
+
+    RetailPartnerDetailDto:
+      allOf:
+        - $ref: '#/components/schemas/RetailPartnerDto'
+        - type: object
+          properties:
+            apiBaseUrl:
+              type: string
+              format: uri
+            supportedFeatures:
+              type: array
+              items:
+                type: string
+                enum: [CatalogSync, InventorySync, PriceSync, OrderForward, OrderStatusWebhook, InventoryWebhook]
+            syncIntervalMinutes:
+              type: integer
+            storeCount:
+              type: integer
+
+    CreateRetailPartnerRequest:
+      type: object
+      required: [partnerId, name, apiBaseUrl, apiCredentials]
+      properties:
+        partnerId:
+          type: string
+          pattern: ^[a-z0-9-]+$
+        name:
+          type: string
+        displayName:
+          type: string
+        logoFile:
+          type: string
+          format: binary
+        apiBaseUrl:
+          type: string
+          format: uri
+        apiCredentials:
+          $ref: '#/components/schemas/ApiCredentials'
+
+    ApiCredentials:
+      type: object
+      properties:
+        apiKey:
+          type: string
+        apiSecret:
+          type: string
+        token:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+
+    ForwardOrderRequest:
+      type: object
+      required: [orderId, customerInfo, items, deliveryAddress]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        customerInfo:
+          $ref: '#/components/schemas/CustomerInfo'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemDto'
+        deliveryAddress:
+          $ref: '#/components/schemas/DeliveryAddress'
+        preferredPickupTime:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    OrderForwardResponse:
+      type: object
+      properties:
+        integrationOrderId:
+          type: string
+        externalOrderId:
+          type: string
+        status:
+          type: string
+          enum: [Sent, Accepted, Rejected, Failed]
+        partnerMessage:
+          type: string
+
+    ExternalOrderStatusDto:
+      type: object
+      properties:
+        externalOrderId:
+          type: string
+        status:
+          type: string
+          enum: [Received, Preparing, ReadyForPickup, PickedUp, Cancelled, Rejected]
+        statusChangedAt:
+          type: string
+          format: date-time
+        estimatedReadyTime:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+
+    InventoryWebhookPayload:
+      type: object
+      properties:
+        storeId:
+          type: string
+        updates:
+          type: array
+          items:
+            type: object
+            properties:
+              sku:
+                type: string
+              available:
+                type: integer
+              price:
+                type: number
+                nullable: true
+
+    OrderStatusWebhookPayload:
+      type: object
+      required: [externalOrderId, status]
+      properties:
+        externalOrderId:
+          type: string
+        status:
+          type: string
+          enum: [Received, Preparing, ReadyForPickup, PickedUp, Cancelled, Rejected]
+        timestamp:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    CustomerInfo:
+      type: object
+      required: [fullName, phone]
+      properties:
+        fullName:
+          type: string
+        phone:
+          type: string
+        email:
+          type: string
+          format: email
+
+    OrderItemDto:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+
+    DeliveryAddress:
+      type: object
+      required: [addressLine, city, geoPoint]
+      properties:
+        addressLine:
+          type: string
+        city:
+          type: string
+        postalCode:
+          type: string
+        geoPoint:
+          $ref: '#/components/schemas/GeoPoint'
+
+    GeoPoint:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+
+    SyncJobResponse:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [Queued, Running, Completed, Failed]
+        queuedAt:
+          type: string
+          format: date-time
+
+    SyncJobDto:
+      type: object
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        partnerId:
+          type: string
+        type:
+          type: string
+          enum: [Catalog, Inventory, Price]
+        status:
+          type: string
+          enum: [Running, Completed, Failed, Cancelled]
+        recordsProcessed:
+          type: integer
+        recordsFailed:
+          type: integer
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
